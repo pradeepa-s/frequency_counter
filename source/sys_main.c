@@ -50,6 +50,9 @@
 #include "sys_common.h"
 
 /* USER CODE BEGIN (1) */
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
 #include "gio.h"
 #include "esm.h"
 #include "ecap.h"
@@ -68,12 +71,29 @@
 
 /* USER CODE BEGIN (2) */
 #define DELAY_VAL   (0xFFFFF)
+#define TOTAL_LOG_AMOUNT    (10000)
+
+extern int channel0_freq;
+extern int channel1_freq;
+extern uint8_t buf0_select;
+extern double channel0_time_log0[TOTAL_LOG_AMOUNT];
+extern double channel0_time_log1[TOTAL_LOG_AMOUNT];
+extern uint8_t buf0_valid;
+extern uint8_t buf1_valid;
+
+
+static void get_noise_floor(double samp[], uint32_t size);
+static void print_number(int32_t num);
 /* USER CODE END */
 
 int main(void)
 {
 /* USER CODE BEGIN (3) */
     int delay = DELAY_VAL;
+    char val[100];
+    int32_t samples[100];
+    uint32_t index = 0U;
+
 
     gioInit();
     esmInit();
@@ -91,13 +111,13 @@ int main(void)
     etpwmSetSyncOut(etpwmREG2, SyncOut_CtrEqZero);
 
     etpwmSetCount(etpwmREG3, 0);
-    etpwmEnableCounterLoadOnSync(etpwmREG3, 0, 0);
-    etpwmActionQualConfig_t pwm3a_50_50_action_qualifier;
+    //etpwmEnableCounterLoadOnSync(etpwmREG3, 0, 0);
+    //etpwmActionQualConfig_t pwm3a_50_50_action_qualifier;
 
-    pwm3a_50_50_action_qualifier.CtrEqPeriod_Action = ActionQual_Toggle;
-    pwm3a_50_50_action_qualifier.CtrEqZero_Action = ActionQual_Disabled;
+    //pwm3a_50_50_action_qualifier.CtrEqPeriod_Action = ActionQual_Toggle;
+   //pwm3a_50_50_action_qualifier.CtrEqZero_Action = ActionQual_Disabled;
 
-    etpwmSetActionQualPwmA(etpwmREG3, pwm3a_50_50_action_qualifier);
+   // etpwmSetActionQualPwmA(etpwmREG3, pwm3a_50_50_action_qualifier);
 
     ecapInit();
     ecapDisableInterrupt(ecapREG2, ecapInt_CEVT1);
@@ -108,7 +128,23 @@ int main(void)
     sciInit();
 
     while(1){
-        sciSendByte(scilinREG, 'A');
+        if(channel0_freq){
+            //ftoa(channel0_freq, val);
+            //sciSend(scilinREG, strlen(val), (uint8*)val);
+            //sciSendByte(scilinREG, '\n');
+            //sciSendByte(scilinREG, '\r');
+
+            if(buf0_select && buf0_valid){
+                buf0_valid = 0;
+                get_noise_floor(channel0_time_log1, TOTAL_LOG_AMOUNT);
+            }
+
+            if(buf0_select == 0 && buf1_valid){
+                buf1_valid = 0;
+                get_noise_floor(channel0_time_log0, TOTAL_LOG_AMOUNT);
+            }
+
+        }
         gioToggleBit(gioPORTB, 1);
         while(delay--);
         delay = DELAY_VAL;
@@ -120,4 +156,36 @@ int main(void)
 
 
 /* USER CODE BEGIN (4) */
+static void get_noise_floor(double samp[], uint32_t size){
+    uint32_t i = 0U;
+    double max = samp[0];
+    double min = samp[0];
+
+    for(i = 0U; i < size; i++){
+        if(samp[i] > max){
+            max = samp[i];
+        }
+
+        if(samp[i] < min){
+            min = samp[i];
+        }
+    }
+
+
+    sciSendByte(scilinREG, 'M');
+    print_number(max);
+    sciSendByte(scilinREG, 'm');
+    print_number(min);
+    sciSendByte(scilinREG, 'd');
+    print_number(max - min);
+
+}
+
+static void print_number(int32_t num){
+    char str[100];
+    ltoa(num, str);
+    sciSend(scilinREG, strlen(str), (uint8*)str);
+    sciSendByte(scilinREG, '\n');
+    sciSendByte(scilinREG, '\r');
+}
 /* USER CODE END */

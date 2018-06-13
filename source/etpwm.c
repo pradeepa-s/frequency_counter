@@ -272,13 +272,13 @@ void etpwmInit(void)
     etpwmREG3->TBCTL |= (uint16)((uint16)0U << 10U);
 
     /** - Sets time period or frequency for ETPWM block both PWMA and PWMB*/
-    etpwmREG3->TBPRD = 9999U;
+    etpwmREG3->TBPRD = 19999U;
 
     /** - Setup the duty cycle for PWMA */
     etpwmREG3->CMPA = 10000U;
 
     /** - Setup the duty cycle for PWMB */
-    etpwmREG3->CMPB = 5000U;
+    etpwmREG3->CMPB = 10000U;
 
     /** - Force EPWMxA output high when counter reaches zero and low when counter reaches Compare A value */
     etpwmREG3->AQCTLA = ((uint16)((uint16)ActionQual_Set   << 0U)

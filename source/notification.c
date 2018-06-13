@@ -57,12 +57,14 @@
 #include "sys_dma.h"
 
 /* USER CODE BEGIN (0) */
+#define TOTAL_LOG_AMOUNT    (10000)
+
 int freq_counter_interrupt_seq = 0;
 int selected_channel = 0;
 
 int cap0_periods = 0;
 int cap0_elapsed_time = 0;
-int cap0_frequency = 0;
+double cap0_frequency = 0.0;
 int cap0_skipped_first = 0;
 
 int cap1_periods = 0;
@@ -70,8 +72,15 @@ int cap1_elapsed_time = 0;
 int cap1_frequency = 0;
 int cap1_skipped_first = 0;
 
-int channel0_freq = 0;
-int channel1_freq = 0;
+double channel0_freq = 0;
+double channel1_freq = 0;
+
+uint8_t buf0_select = 1U;
+uint8_t buf0_valid = 0U;
+uint8_t buf1_valid = 0U;
+double channel0_time_log0[TOTAL_LOG_AMOUNT];
+double channel0_time_log1[TOTAL_LOG_AMOUNT];
+int channel0_index = 0;
 
 #define CHANNEL_0_ECAP_MODULE   (ecapREG3)
 #define CHANNEL_1_ECAP_MODULE   (ecapREG2)
@@ -157,12 +166,12 @@ void etpwmNotification(etpwmBASE_t *node)
 
             /* Start eCAP1 */
             ecapClearFlag(CHANNEL_0_ECAP_MODULE, ecapInt_CEVT1);
+            CHANNEL_0_ECAP_MODULE->ECCTL2 |= 0x0008U;
             ecapEnableInterrupt(CHANNEL_0_ECAP_MODULE, ecapInt_CEVT1);
 
             gioToggleBit(gioPORTA, 7);
 
             freq_counter_interrupt_seq++;
-            //gioSetBit(gioPORTA, 7, 1);
         }
         else if(selected_channel == 1 && freq_counter_interrupt_seq == 2){
             /* PWM 50-50 level low */
@@ -174,7 +183,6 @@ void etpwmNotification(etpwmBASE_t *node)
             gioToggleBit(gioPORTA, 0);
 
             freq_counter_interrupt_seq++;
-            //gioSetBit(gioPORTA, 0, 1);
         }
     }
     else if(etpwmREG2 == node){
@@ -185,12 +193,32 @@ void etpwmNotification(etpwmBASE_t *node)
             /* Stop eCAP1 */
             ecapDisableInterrupt(CHANNEL_0_ECAP_MODULE, ecapInt_CEVT1);
 
-            gioToggleBit(gioPORTA, 7);
-            //gioSetBit(gioPORTA, 7, 0);
-
+            cap0_frequency = (double)((double)cap0_elapsed_time / (double)cap0_periods);
             if(cap0_frequency > 0){
                 /* Calculate frequency of channel 0 */
-                channel0_freq = VCLK4_FREQ * 1000000 / cap0_frequency;
+                channel0_freq = (double)((double)VCLK4_FREQ * 1000000.0 / cap0_frequency);
+
+                if(channel0_index < TOTAL_LOG_AMOUNT){
+                    if(buf0_select){
+                        channel0_time_log0[channel0_index] = channel0_freq;
+                    }
+                    else{
+                        channel0_time_log1[channel0_index] = channel0_freq;
+                    }
+                    channel0_index++;
+                }
+                else{
+                    if(buf0_select){
+                        buf0_valid = 1;
+                        buf0_select = 0;
+                    }
+                    else{
+                        buf1_valid = 1;
+                        buf0_select = 1;
+                    }
+
+                    channel0_index = 0;
+                }
             }
 
             selected_channel = 1;
@@ -256,15 +284,15 @@ void ecapNotification(ecapBASE_t *ecap,uint16 flags)
             gioToggleBit(gioPORTA, 2);
             cap0_periods += 4;
 
-            cap0_elapsed_time = ecapGetCAP1(ecap) +
+            cap0_elapsed_time = cap0_elapsed_time + ecapGetCAP1(ecap) +
                     ecapGetCAP2(ecap) +
                     ecapGetCAP3(ecap) +
                     ecapGetCAP4(ecap);
 
-            cap0_frequency += (cap0_elapsed_time / 4);
+          //  cap0_frequency += (cap0_elapsed_time / 4);
 
             if(cap0_periods > 4){
-                cap0_frequency = cap0_frequency / 2;
+              //  cap0_frequency = cap0_frequency / 2;
             }
 
         }
