@@ -169,15 +169,16 @@ static void get_noise_floor(double samp[], uint32_t size){
         if(samp[i] < min){
             min = samp[i];
         }
+
+        print_number(samp[i]);
     }
 
 
-    sciSendByte(scilinREG, 'M');
-    print_number(max);
-    sciSendByte(scilinREG, 'm');
-    print_number(min);
-    sciSendByte(scilinREG, 'd');
-    print_number(max - min);
+    //sciSendByte(scilinREG, 'M');
+    //print_number(max);
+    //sciSendByte(scilinREG, 'm');
+    //print_number(min);
+    //sciSendByte(scilinREG, 'd');
 
 }
 
