@@ -213,7 +213,7 @@ enum systemClockSource
 *
 *   VCLK4 Domain frequency exported from HALCoGen GUI
 */
-#define VCLK4_FREQ   80.000F
+#define VCLK4_FREQ   160.000F
 
 
 /** @def SYS_PRE1

@@ -57,20 +57,20 @@
 #include "sys_dma.h"
 
 /* USER CODE BEGIN (0) */
-#define TOTAL_LOG_AMOUNT    (10000)
+#define TOTAL_LOG_AMOUNT    (100)
 
-int freq_counter_interrupt_seq = 0;
-int selected_channel = 0;
+unsigned int freq_counter_interrupt_seq = 0;
+unsigned int selected_channel = 0;
 
-int cap0_periods = 0;
-int cap0_elapsed_time = 0;
+volatile unsigned int cap0_periods = 0;
+volatile unsigned int cap0_elapsed_time = 0;
 double cap0_frequency = 0.0;
-int cap0_skipped_first = 0;
+unsigned int cap0_skipped_first = 0;
 
-int cap1_periods = 0;
-int cap1_elapsed_time = 0;
-int cap1_frequency = 0;
-int cap1_skipped_first = 0;
+unsigned int cap1_periods = 0;
+unsigned int cap1_elapsed_time = 0;
+unsigned int cap1_frequency = 0;
+unsigned int cap1_skipped_first = 0;
 
 double channel0_freq = 0;
 double channel1_freq = 0;
@@ -78,9 +78,17 @@ double channel1_freq = 0;
 uint8_t buf0_select = 1U;
 uint8_t buf0_valid = 0U;
 uint8_t buf1_valid = 0U;
-double channel0_time_log0[TOTAL_LOG_AMOUNT];
-double channel0_time_log1[TOTAL_LOG_AMOUNT];
-int channel0_index = 0;
+unsigned int channel0_time_log0[TOTAL_LOG_AMOUNT];
+unsigned int channel0_time_log1[TOTAL_LOG_AMOUNT];
+unsigned int channel0_period_log0[TOTAL_LOG_AMOUNT];
+unsigned int channel0_period_log1[TOTAL_LOG_AMOUNT];
+
+unsigned int p_arr[100];
+
+unsigned int channel0_index = 0;
+
+uint8_t now_print = 0;
+int print_timer = 0;
 
 #define CHANNEL_0_ECAP_MODULE   (ecapREG3)
 #define CHANNEL_1_ECAP_MODULE   (ecapREG2)
@@ -158,45 +166,65 @@ void etpwmNotification(etpwmBASE_t *node)
 {
 /*  enter user code between the USER CODE BEGIN and USER CODE END. */
 /* USER CODE BEGIN (44) */
+
+    /*
+     * Interrupt sequence:
+     *
+     * 1. PWM-20-80 20% interrupt while PWM-50-50 is high (Channel 0 selected)
+     * 2. PWM-20-80 100% interrupt while PWM-50-50 is high (Channel 0 selected) - Calculate freq for channel 0
+     * 3. PWM-20-80 20% interrupt while PWM-50-50 is low (Channel 1 selected)
+     * 4. PWM-20-80 100% interrupt while PWM-50-50 is low (Channel 1 selected) - Calculate freq for channel 1
+     *
+     */
+
     if(etpwmREG1 == node){
+
+        if(print_timer > 8000){
+            now_print = 1;
+            print_timer = 0;
+        }
+        else{
+            print_timer++;
+        }
+
         /* 20-80 PWM After 20% */
         /* Start the frequency capture */
         if(selected_channel == 0 && freq_counter_interrupt_seq == 0){
             /* PWM 50-50 level high */
-
-            /* Start eCAP1 */
+            gioSetBit(gioPORTA, 7,1); // J11, 19
+            /* Start CHANNEL_0 */
             ecapClearFlag(CHANNEL_0_ECAP_MODULE, ecapInt_CEVT1);
             CHANNEL_0_ECAP_MODULE->ECCTL2 |= 0x0008U;
             ecapEnableInterrupt(CHANNEL_0_ECAP_MODULE, ecapInt_CEVT1);
-
-            gioToggleBit(gioPORTA, 7);
 
             freq_counter_interrupt_seq++;
         }
         else if(selected_channel == 1 && freq_counter_interrupt_seq == 2){
             /* PWM 50-50 level low */
 
-            /* Start eCAP2 */
+            /* Start CHANNEL_1 */
             ecapClearFlag(CHANNEL_1_ECAP_MODULE, ecapInt_CEVT1);
             ecapEnableInterrupt(CHANNEL_1_ECAP_MODULE, ecapInt_CEVT1);
-
-            gioToggleBit(gioPORTA, 0);
 
             freq_counter_interrupt_seq++;
         }
     }
     else if(etpwmREG2 == node){
+
+        gioToggleBit(gioPORTA, 0);  // J11, 7
+
         /* 20-80 PWM used for internal synch */
         if(selected_channel == 0 && freq_counter_interrupt_seq == 1){
             /* PWM 50-50 level high */
-
-            /* Stop eCAP1 */
+            gioSetBit(gioPORTA, 7,0); // J11, 19
+            /* Stop CHANNEL_0 */
             ecapDisableInterrupt(CHANNEL_0_ECAP_MODULE, ecapInt_CEVT1);
 
-            cap0_frequency = (double)((double)cap0_elapsed_time / (double)cap0_periods);
+            cap0_frequency = (double)((double)cap0_elapsed_time / (double)(cap0_periods));
+           // cap0_frequency = cap0_frequency * 1000;
             if(cap0_frequency > 0){
                 /* Calculate frequency of channel 0 */
-                channel0_freq = (double)((double)VCLK4_FREQ * 1000000.0 / cap0_frequency);
+                channel0_freq = (double)((double)VCLK4_FREQ * 1000000.0 * 2.0 / cap0_frequency);
 
                 if(channel0_index < TOTAL_LOG_AMOUNT){
                     if(buf0_select){
@@ -227,11 +255,10 @@ void etpwmNotification(etpwmBASE_t *node)
         else if(selected_channel == 1 && freq_counter_interrupt_seq == 3){
             /* PWM 50-50 level low */
 
-            /* Stop eCAP2 */
+            /* Stop CHANNEL_1 */
             ecapDisableInterrupt(CHANNEL_1_ECAP_MODULE, ecapInt_CEVT1);
 
             gioToggleBit(gioPORTA, 0);
-            //gioSetBit(gioPORTA, 0, 0);
 
             if(cap1_frequency > 0){
                 /* Calculate frequency of channel 1 */
@@ -252,6 +279,7 @@ void etpwmNotification(etpwmBASE_t *node)
         cap1_elapsed_time = 0;
         cap1_frequency = 0;
         cap1_skipped_first = 0;
+
 
     }
 /* USER CODE END */
@@ -279,22 +307,50 @@ void ecapNotification(ecapBASE_t *ecap,uint16 flags)
 {
 /*  enter user code between the USER CODE BEGIN and USER CODE END. */
 /* USER CODE BEGIN (51) */
+    unsigned int capt1;
+
     if(CHANNEL_0_ECAP_MODULE == ecap && flags == 2){
         if(cap0_skipped_first){
-            gioToggleBit(gioPORTA, 2);
-            cap0_periods += 4;
+            gioToggleBit(gioPORTA, 2); // J11, 12
 
-            cap0_elapsed_time = cap0_elapsed_time + ecapGetCAP1(ecap) +
-                    ecapGetCAP2(ecap) +
-                    ecapGetCAP3(ecap) +
-                    ecapGetCAP4(ecap);
+            capt1 = ecapGetCAP1(ecap);
+            cap0_elapsed_time += capt1;
+            cap0_periods++;
 
-          //  cap0_frequency += (cap0_elapsed_time / 4);
+#if 0
+            if(cap0_periods == 100U){
 
-            if(cap0_periods > 4){
-              //  cap0_frequency = cap0_frequency / 2;
+                cap0_frequency = (double)((double)cap0_elapsed_time / (double)(cap0_periods));
+                cap0_frequency = cap0_frequency * 1000;
+
+                if(channel0_index < TOTAL_LOG_AMOUNT){
+                    if(buf0_select){
+                        channel0_time_log0[channel0_index] = cap0_frequency;
+                    }
+                    else{
+                        channel0_time_log1[channel0_index] = cap0_frequency;
+                    }
+                    channel0_index++;
+                }
+                else{
+                    if(buf0_select){
+                        buf0_valid = 1;
+                        buf0_select = 0;
+                    }
+                    else{
+                        buf1_valid = 1;
+                        buf0_select = 1;
+                    }
+
+                    channel0_index = 0;
+                }
+
+
+                cap0_periods = 0;
+                cap0_elapsed_time = 0;
+                cap0_frequency = 0;
             }
-
+#endif
         }
         else{
             gioToggleBit(gioPORTA, 2);
@@ -307,16 +363,9 @@ void ecapNotification(ecapBASE_t *ecap,uint16 flags)
             gioToggleBit(gioPORTA, 1);
             cap1_periods += 4;
 
-            cap1_elapsed_time = ecapGetCAP1(ecap) +
-                    ecapGetCAP2(ecap) +
-                    ecapGetCAP3(ecap) +
-                    ecapGetCAP4(ecap);
-
-            cap1_frequency += (cap1_elapsed_time / 4);
-
-            if(cap1_periods > 4){
-                cap1_frequency = cap1_frequency / 2;
-            }
+            capt1 = ecapGetCAP1(ecap);
+            cap1_elapsed_time += capt1;
+            cap1_periods++;
         }
         else{
             gioToggleBit(gioPORTA, 1);

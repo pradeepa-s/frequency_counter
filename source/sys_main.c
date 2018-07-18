@@ -71,19 +71,24 @@
 
 /* USER CODE BEGIN (2) */
 #define DELAY_VAL   (0xFFFFF)
-#define TOTAL_LOG_AMOUNT    (10000)
+#define TOTAL_LOG_AMOUNT    (100)
 
-extern int channel0_freq;
-extern int channel1_freq;
+extern unsigned int channel0_freq;
+extern unsigned int channel1_freq;
 extern uint8_t buf0_select;
-extern double channel0_time_log0[TOTAL_LOG_AMOUNT];
-extern double channel0_time_log1[TOTAL_LOG_AMOUNT];
+extern unsigned int channel0_time_log0[TOTAL_LOG_AMOUNT];
+extern unsigned int channel0_time_log1[TOTAL_LOG_AMOUNT];
+extern unsigned int channel0_period_log0[TOTAL_LOG_AMOUNT];
+extern unsigned int channel0_period_log1[TOTAL_LOG_AMOUNT];
 extern uint8_t buf0_valid;
 extern uint8_t buf1_valid;
+extern uint8_t now_print;
 
+unsigned int max = 0;
+unsigned int min = 16000000;
 
-static void get_noise_floor(double samp[], uint32_t size);
-static void print_number(int32_t num);
+static void get_noise_floor(unsigned int samp1[], unsigned int samp[], uint32_t size);
+static void print_number(unsigned int num);
 /* USER CODE END */
 
 int main(void)
@@ -111,24 +116,17 @@ int main(void)
     etpwmSetSyncOut(etpwmREG2, SyncOut_CtrEqZero);
 
     etpwmSetCount(etpwmREG3, 0);
-    //etpwmEnableCounterLoadOnSync(etpwmREG3, 0, 0);
-    //etpwmActionQualConfig_t pwm3a_50_50_action_qualifier;
-
-    //pwm3a_50_50_action_qualifier.CtrEqPeriod_Action = ActionQual_Toggle;
-   //pwm3a_50_50_action_qualifier.CtrEqZero_Action = ActionQual_Disabled;
-
-   // etpwmSetActionQualPwmA(etpwmREG3, pwm3a_50_50_action_qualifier);
 
     ecapInit();
-    ecapDisableInterrupt(ecapREG2, ecapInt_CEVT1);
-    ecapDisableInterrupt(ecapREG3, ecapInt_CEVT1);
+    //ecapDisableInterrupt(ecapREG2, ecapInt_CEVT1);
+    //ecapEnableInterrupt(ecapREG3, ecapInt_CEVT1);
 
     etpwmStartTBCLK();
 
     sciInit();
 
     while(1){
-        if(channel0_freq){
+        if(1){
             //ftoa(channel0_freq, val);
             //sciSend(scilinREG, strlen(val), (uint8*)val);
             //sciSendByte(scilinREG, '\n');
@@ -136,12 +134,12 @@ int main(void)
 
             if(buf0_select && buf0_valid){
                 buf0_valid = 0;
-                get_noise_floor(channel0_time_log1, TOTAL_LOG_AMOUNT);
+                get_noise_floor(channel0_period_log0, channel0_time_log0, TOTAL_LOG_AMOUNT);
             }
 
             if(buf0_select == 0 && buf1_valid){
                 buf1_valid = 0;
-                get_noise_floor(channel0_time_log0, TOTAL_LOG_AMOUNT);
+                get_noise_floor(channel0_period_log1, channel0_time_log1, TOTAL_LOG_AMOUNT);
             }
 
         }
@@ -156,10 +154,11 @@ int main(void)
 
 
 /* USER CODE BEGIN (4) */
-static void get_noise_floor(double samp[], uint32_t size){
-    uint32_t i = 0U;
-    double max = samp[0];
-    double min = samp[0];
+static void get_noise_floor(unsigned int samp2[], unsigned int samp[], uint32_t size){
+    uint32_t j = 0U, i = 0U;
+
+    unsigned int avg = 0;
+    const unsigned int avg_size = 1;
 
     for(i = 0U; i < size; i++){
         if(samp[i] > max){
@@ -170,19 +169,24 @@ static void get_noise_floor(double samp[], uint32_t size){
             min = samp[i];
         }
 
-        print_number(samp[i]);
+        for(j = 0; (j < avg_size) && (i < size) ; j++, i++){
+            avg += samp[i];
+        }
+        avg /= j;
+
+        if(now_print){
+            now_print = 0;
+            sciSendByte(scilinREG, 'M');
+            print_number(max);
+            sciSendByte(scilinREG, 'm');
+            print_number(min);
+        }
+
+        avg = 0;
     }
-
-
-    //sciSendByte(scilinREG, 'M');
-    //print_number(max);
-    //sciSendByte(scilinREG, 'm');
-    //print_number(min);
-    //sciSendByte(scilinREG, 'd');
-
 }
 
-static void print_number(int32_t num){
+static void print_number(unsigned int num){
     char str[100];
     ltoa(num, str);
     sciSend(scilinREG, strlen(str), (uint8*)str);
