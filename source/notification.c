@@ -57,7 +57,7 @@
 #include "sys_dma.h"
 
 /* USER CODE BEGIN (0) */
-#define TOTAL_LOG_AMOUNT    (100)
+#define TOTAL_LOG_AMOUNT    (500)
 
 unsigned int freq_counter_interrupt_seq = 0;
 unsigned int selected_channel = 0;
@@ -89,6 +89,11 @@ unsigned int channel0_index = 0;
 
 uint8_t now_print = 0;
 int print_timer = 0;
+
+unsigned int max = 0;
+unsigned int min = 16000000;
+
+unsigned int cool_down = 101;
 
 #define CHANNEL_0_ECAP_MODULE   (ecapREG3)
 #define CHANNEL_1_ECAP_MODULE   (ecapREG2)
@@ -226,12 +231,25 @@ void etpwmNotification(etpwmBASE_t *node)
                 /* Calculate frequency of channel 0 */
                 channel0_freq = (double)((double)VCLK4_FREQ * 1000000.0 * 2.0 / cap0_frequency);
 
+                if(cool_down == 1){
+                    if(cap0_frequency < min){
+                        min = cap0_frequency;
+                    }
+
+                    if(cap0_frequency > max){
+                        max = cap0_frequency;
+                    }
+                }
+                else{
+                        cool_down--;
+                }
+
                 if(channel0_index < TOTAL_LOG_AMOUNT){
                     if(buf0_select){
-                        channel0_time_log0[channel0_index] = channel0_freq;
+                        channel0_time_log0[channel0_index] = cap0_frequency;
                     }
                     else{
-                        channel0_time_log1[channel0_index] = channel0_freq;
+                        channel0_time_log1[channel0_index] = cap0_frequency;
                     }
                     channel0_index++;
                 }

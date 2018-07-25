@@ -71,7 +71,7 @@
 
 /* USER CODE BEGIN (2) */
 #define DELAY_VAL   (0xFFFFF)
-#define TOTAL_LOG_AMOUNT    (100)
+#define TOTAL_LOG_AMOUNT    (500)
 
 extern unsigned int channel0_freq;
 extern unsigned int channel1_freq;
@@ -84,8 +84,8 @@ extern uint8_t buf0_valid;
 extern uint8_t buf1_valid;
 extern uint8_t now_print;
 
-unsigned int max = 0;
-unsigned int min = 16000000;
+extern unsigned int max;
+extern unsigned int min;
 
 static void get_noise_floor(unsigned int samp1[], unsigned int samp[], uint32_t size);
 static void print_number(unsigned int num);
@@ -159,8 +159,11 @@ static void get_noise_floor(unsigned int samp2[], unsigned int samp[], uint32_t 
 
     unsigned int avg = 0;
     const unsigned int avg_size = 1;
+    unsigned int this_min = 0xFFFFFFF;
+    unsigned int this_max = 0;
 
     for(i = 0U; i < size; i++){
+#if 0
         if(samp[i] > max){
             max = samp[i];
         }
@@ -169,10 +172,19 @@ static void get_noise_floor(unsigned int samp2[], unsigned int samp[], uint32_t 
             min = samp[i];
         }
 
+        if(samp[i] > this_max){
+            this_max = samp[i];
+        }
+
+        if(samp[i] < this_min){
+            this_min = samp[i];
+        }
+
         for(j = 0; (j < avg_size) && (i < size) ; j++, i++){
             avg += samp[i];
         }
         avg /= j;
+#endif
 
         if(now_print){
             now_print = 0;
