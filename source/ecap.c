@@ -121,7 +121,7 @@ void ecapInit(void)
                       | (uint16)((uint16)RISING_EDGE << 6U)        /* Capture Event 4 Polarity */
                       | (uint16)((uint16)RESET_DISABLE << 7U)   /* Counter Reset on Capture Event 4 */
                       | (uint16)((uint16)1U << 8U)            /* Enable/Disable loading on a capture event */
-                      | (uint16)((uint16)0U << 9U));      /* Setup Event Filter prescale */
+                      | (uint16)((uint16)1U << 9U));      /* Setup Event Filter prescale */
 
                     
     /** - Setup control register 2
