@@ -59,6 +59,7 @@
 #include "etpwm.h"
 #include "sys_core.h"
 #include "sci.h"
+#include "global_defs.h"
 /* USER CODE END */
 
 /** @fn void main(void)
@@ -71,19 +72,10 @@
 
 /* USER CODE BEGIN (2) */
 #define DELAY_VAL   (0xFFFFF)
-#define TOTAL_LOG_AMOUNT    (10000)
 
-extern int channel0_freq;
-extern int channel1_freq;
-extern uint8_t buf0_select;
-extern double channel0_time_log0[TOTAL_LOG_AMOUNT];
-extern double channel0_time_log1[TOTAL_LOG_AMOUNT];
-extern uint8_t buf0_valid;
-extern uint8_t buf1_valid;
-
-
-static void get_noise_floor(double samp[], uint32_t size);
-static void print_number(int32_t num);
+static void get_noise_floor(unsigned int samp1[], unsigned int samp[], uint32_t size);
+static void print_number(unsigned int num);
+static void print_stats(void);
 /* USER CODE END */
 
 int main(void)
@@ -94,58 +86,54 @@ int main(void)
     int32_t samples[100];
     uint32_t index = 0U;
 
+    _disable_interrupt_();
 
     gioInit();
     esmInit();
 
-    _enable_interrupt_();
-
+    etpwmStopTBCLK();
     etpwmInit();
 
-    etpwmSetCounterMode(etpwmREG1, CounterMode_Up);
+    etpwmDisableInterrupt(etpwmREG1);
+    etpwmDisableInterrupt(etpwmREG2);
+    etpwmDisableInterrupt(etpwmREG3);
+
     etpwmSetCount(etpwmREG1, 0);
-    etpwmSetSyncOut(etpwmREG1, SyncOut_CtrEqZero);
-
     etpwmSetCount(etpwmREG2, 0);
-    etpwmEnableCounterLoadOnSync(etpwmREG2, 0, 0);
-    etpwmSetSyncOut(etpwmREG2, SyncOut_CtrEqZero);
-
     etpwmSetCount(etpwmREG3, 0);
-    //etpwmEnableCounterLoadOnSync(etpwmREG3, 0, 0);
-    //etpwmActionQualConfig_t pwm3a_50_50_action_qualifier;
-
-    //pwm3a_50_50_action_qualifier.CtrEqPeriod_Action = ActionQual_Toggle;
-   //pwm3a_50_50_action_qualifier.CtrEqZero_Action = ActionQual_Disabled;
-
-   // etpwmSetActionQualPwmA(etpwmREG3, pwm3a_50_50_action_qualifier);
 
     ecapInit();
-    ecapDisableInterrupt(ecapREG2, ecapInt_CEVT1);
-    ecapDisableInterrupt(ecapREG3, ecapInt_CEVT1);
+
+    ecapDisableInterrupt(CHANNEL_1_ECAP_MODULE, ecapInt_CEVT1);
+    ecapDisableInterrupt(CHANNEL_0_ECAP_MODULE, ecapInt_CEVT1);
+
+    ecapClearFlag(CHANNEL_0_ECAP_MODULE, ecapInt_All);
+    ecapClearFlag(CHANNEL_1_ECAP_MODULE, ecapInt_All);
+
+    ecapSetCounter(CHANNEL_0_ECAP_MODULE, 0);
+    ecapSetCounter(CHANNEL_1_ECAP_MODULE, 0);
 
     etpwmStartTBCLK();
+
+    etpwmClearEventFlag(etpwmREG1, (Event_Interrupt | Event_SOCA | Event_SOCB));
+    etpwmClearEventFlag(etpwmREG2, (Event_Interrupt | Event_SOCA | Event_SOCB));
+    etpwmClearEventFlag(etpwmREG3, (Event_Interrupt | Event_SOCA | Event_SOCB));
+
+    etpwmEnableInterrupt(etpwmREG1, CTR_UP_CMPB, EventPeriod_FirstEvent);   // PWM 20-80, 20%
+    etpwmEnableInterrupt(etpwmREG2, CTR_ZERO, EventPeriod_FirstEvent);
+
+
+    ecapEnableInterrupt(CHANNEL_0_ECAP_MODULE, ecapInt_CEVT1);
+
+    _enable_interrupt_();
 
     sciInit();
 
     while(1){
-        if(channel0_freq){
-            //ftoa(channel0_freq, val);
-            //sciSend(scilinREG, strlen(val), (uint8*)val);
-            //sciSendByte(scilinREG, '\n');
-            //sciSendByte(scilinREG, '\r');
-
-            if(buf0_select && buf0_valid){
-                buf0_valid = 0;
-                get_noise_floor(channel0_time_log1, TOTAL_LOG_AMOUNT);
-            }
-
-            if(buf0_select == 0 && buf1_valid){
-                buf1_valid = 0;
-                get_noise_floor(channel0_time_log0, TOTAL_LOG_AMOUNT);
-            }
-
+        if(print_now){
+            print_now = 0;
+            print_stats();
         }
-        gioToggleBit(gioPORTB, 1);
         while(delay--);
         delay = DELAY_VAL;
     }
@@ -156,10 +144,33 @@ int main(void)
 
 
 /* USER CODE BEGIN (4) */
-static void get_noise_floor(double samp[], uint32_t size){
+static void print_stats(void){
+    const uint8 str1[11] = "Ch0: M -> ";
+    const uint8 str2[11] = "Ch0: m -> ";
+    const uint8 str3[11] = "Ch1: M -> ";
+    const uint8 str4[11] = "Ch1: m -> ";
+
+    sciSend(scilinREG, sizeof(str1), str1);
+    print_number(ch0_max);
+
+    sciSend(scilinREG, sizeof(str2), str2);
+    print_number(ch0_min);
+
+    sciSend(scilinREG, sizeof(str3), str3);
+    print_number(ch1_max);
+
+    sciSend(scilinREG, sizeof(str4), str4);
+    print_number(ch1_min);
+
+    sciSendByte(scilinREG, '\n');
+    sciSendByte(scilinREG, '\r');
+}
+
+static void get_noise_floor(unsigned int samp2[], unsigned int samp[], uint32_t size){
     uint32_t i = 0U;
-    double max = samp[0];
-    double min = samp[0];
+    unsigned int max = samp[0];
+    unsigned int min = samp[0];
+    unsigned int avg = 0;
 
     for(i = 0U; i < size; i++){
         if(samp[i] > max){
@@ -170,23 +181,18 @@ static void get_noise_floor(double samp[], uint32_t size){
             min = samp[i];
         }
 
-        print_number(samp[i]);
+        avg += samp[i];
     }
 
-
-    //sciSendByte(scilinREG, 'M');
-    //print_number(max);
-    //sciSendByte(scilinREG, 'm');
-    //print_number(min);
-    //sciSendByte(scilinREG, 'd');
+    avg /= size;
+    print_number(avg);
 
 }
 
-static void print_number(int32_t num){
+static void print_number(unsigned int num){
     char str[100];
     ltoa(num, str);
     sciSend(scilinREG, strlen(str), (uint8*)str);
-    sciSendByte(scilinREG, '\n');
-    sciSendByte(scilinREG, '\r');
+    sciSendByte(scilinREG, '\t');
 }
 /* USER CODE END */

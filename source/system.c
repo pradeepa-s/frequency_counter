@@ -301,7 +301,7 @@ void mapClocks(void)
                          | (uint32)((uint32)1U << 16U);
 
     systemREG2->CLK2CNTL = (systemREG2->CLK2CNTL & 0xFFFFF0F0U)
-                         | (uint32)((uint32)1U << 8U)
+                         | (uint32)((uint32)0U << 8U)
                          | (uint32)((uint32)1U << 0U);
 
     systemREG2->VCLKACON1 =  (uint32)((uint32)(1U - 1U) << 24U)
